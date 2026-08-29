@@ -1,0 +1,497 @@
+{
+  "name": "Heróis Burger — Agente WhatsApp (Claude)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-get",
+      "name": "Webhook Verify (GET)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "herois-whatsapp-verify"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.query['hub.verify_token'] }}",
+              "rightValue": "={{ $('Config').first().json.verifyToken }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-verify",
+      "name": "Token OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $('Webhook Verify (GET)').first().json.query['hub.challenge'] }}",
+        "options": {}
+      },
+      "id": "resp-ok",
+      "name": "Responder challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "forbidden",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "resp-403",
+      "name": "Responder 403",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a1",
+              "name": "verifyToken",
+              "value": "herois-burger-2026",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "phoneNumberId",
+              "value": "COLE_AQUI_O_PHONE_NUMBER_ID",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "restaurantNumber",
+              "value": "5564900000000",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "graphVersion",
+              "value": "v25.0",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh-post",
+      "name": "Webhook Mensagens (POST)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        400
+      ],
+      "webhookId": "herois-whatsapp-messages"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b1",
+              "name": "verifyToken",
+              "value": "herois-burger-2026",
+              "type": "string"
+            },
+            {
+              "id": "b2",
+              "name": "phoneNumberId",
+              "value": "COLE_AQUI_O_PHONE_NUMBER_ID",
+              "type": "string"
+            },
+            {
+              "id": "b3",
+              "name": "restaurantNumber",
+              "value": "5564900000000",
+              "type": "string"
+            },
+            {
+              "id": "b4",
+              "name": "graphVersion",
+              "value": "v25.0",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config2",
+      "name": "Config2",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extrai a mensagem de texto do payload da WhatsApp Cloud API.\n// Ignora eventos de status (entregue/lido) e mensagens que não são texto.\nconst out = [];\n// Normaliza números do Brasil: a Meta pode enviar sem o 9º dígito (ex.: 556400000000).\n// Adiciona o 9 para responder e para a memória por telefone ficar consistente.\nfunction normBR(n) { n = String(n || ''); if (n.startsWith('55') && n.length === 12) return n.slice(0,4) + '9' + n.slice(4); return n; }\n\nfor (const item of $input.all()) {\n  const body = item.json.body || {};\n  const cfg = {\n    phoneNumberId: item.json.phoneNumberId,\n    restaurantNumber: item.json.restaurantNumber,\n    graphVersion: item.json.graphVersion,\n  };\n  for (const entry of body.entry || []) {\n    for (const change of entry.changes || []) {\n      const v = change.value || {};\n      const contacts = v.contacts || [];\n      for (const m of v.messages || []) {\n        if (m.type !== 'text') {\n          out.push({ json: { ...cfg, from: normBR(m.from), fromRaw: m.from, name: contacts[0]?.profile?.name || '', text: '[mensagem não é texto]', unsupported: true, msgId: m.id } });\n          continue;\n        }\n        out.push({ json: { ...cfg, from: normBR(m.from), fromRaw: m.from, name: contacts[0]?.profile?.name || '', text: m.text.body, unsupported: false, msgId: m.id } });\n      }\n    }\n  }\n}\nreturn out;"
+      },
+      "id": "parse",
+      "name": "Extrair mensagem",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.unsupported ? 'O cliente enviou algo que não é texto (áudio, imagem ou figurinha). Peça gentilmente para escrever em texto.' : $json.text }}",
+        "options": {
+          "systemMessage": "=Você é o \"Robin\", assistente virtual de atendimento do Heróis Super Burger, hamburgueria temática de super-heróis em Caldas Novas (GO), no Singapura Shopping. Você atende clientes pelo WhatsApp em português do Brasil, de forma simpática, direta e curta (mensagens de WhatsApp, não e-mails). Use no máximo 1 emoji por mensagem. Nunca invente itens, preços ou promoções que não estejam neste cardápio.\n\n## O QUE VOCÊ FAZ\n1. Responde dúvidas sobre cardápio, ingredientes, preços, horário, endereço e entrega.\n2. Anota pedidos para ENTREGA ou RETIRADA, confirmando item por item.\n3. Quando o pedido estiver completo e o cliente confirmar, você fecha o pedido (veja FORMATO DE FECHAMENTO).\n4. Encaminha para um atendente humano quando necessário (veja ENCAMINHAMENTO).\n\n## O QUE VOCÊ NÃO FAZ\n- Não aceita pedido fora do horário de funcionamento (diga o horário e ofereça anotar para quando abrir).\n- Não confirma promoções, cupons ou descontos. Se perguntarem, diga que vai verificar com a equipe e encaminhe para humano.\n- Não vende bebida alcoólica para quem disser ser menor de 18 anos.\n- Não fala de assuntos fora do restaurante. Se insistirem, responda educadamente que só ajuda com o Heróis Burger.\n- Não pede dados de cartão. Pagamento com cartão é feito na entrega (maquininha) ou na retirada.\n\n## INFORMAÇÕES DO RESTAURANTE (CONFIRMAR COM O DONO)\n- Endereço: Singapura Shopping, Caldas Novas - GO.\n- Horário: terça a domingo, 18h às 23h30. Segunda fechado. (CONFIRMAR)\n- Entrega: Caldas Novas (área urbana). Taxa de entrega: R$ 8,00. Tempo médio: 40 a 60 min. (CONFIRMAR)\n- Retirada no balcão: 25 a 35 min.\n- Pagamento: PIX, cartão de crédito/débito na entrega, dinheiro (perguntar troco para quanto).\n\n## CARDÁPIO (preços em R$)\n\n### Combos (hambúrguer + batata + refrigerante)\n- Combo Spider Man Burger — pão caseiro amanteigado, 180g de Steak Angus, queijo cheddar, bacon e cebola caramelizada — 60,00\n- Combo Thor Burger — Steak Angus, cheddar, bacon e costela desfiada — 60,00\n- Combo Octopus Burger — Steak Angus, cheddar, cebola caramelizada, bacon — 60,00\n- Combo Hulk Burger — 2 Steak Angus 180g, muito bacon, muito queijo prato e maionese especial — 81,00\n- Combo Mulher Maravilha Burger — Steak Angus, queijo prato, salada e maionese — 55,00\n- Combo Homem Morcego Burger — Steak Angus, queijo prato, bacon e molho barbecue com alho — 57,00\n- Combo Tony Stark Burger — Steak Angus, molho Billy Jack e farofa de bacon — 57,00\n- Combo O Mais Rápido Burger — Steak Angus, bacon, catupiry e Doritos — 61,00\n- Combo Bruxo Burger — Steak Angus, bacon, molho gorgonzola e cebola crispy — 60,00\n- Combo Viúva Negra Burger — blend de frango empanado, cebola roxa, alface, tomate e molho especial — 55,00\n- Combo Aquaman Burger — Steak Angus, camarão e cream cheese — 65,00\n- Combo Hexa Burger — 2 smash de 100g, duas camadas de cheddar, bacon e maionese especial — 59,90\n- Heróis Kids Feliz — hambúrguer angus 100g, queijo, petisco e bebida — 60,00\n- Heróis Kids Feliz Edição Stitch — pão temático, carne 100g, queijo prato, petisco e bebida — 60,00\n\n### Super Burgers (só o lanche)\n- Spider-Man Burger — pão caseiro amanteigado, 180g Steak Angus, cheddar, bacon, cebola caramelizada — 45,00\n- Thor Burger — Steak Angus, cheddar, bacon e costela desfiada — 45,00\n- Octopus Burger — Angus 180g, cheddar, cebola caramelizada, bacon e farofa de bacon — 45,00\n- Hulk Burger — 2 Steak Angus 180g, muito bacon, muito queijo prato e maionese especial — 66,00\n- Tony Stark Burger — Steak Angus, molho Billy Jack e farofa de bacon — 42,00\n- O Bruxo Burger — Steak Angus, bacon, molho gorgonzola e cebola crispy — 45,00\n- Homem Morcego Burger — Steak Angus, queijo prato, bacon e barbecue com alho — 42,00\n- O Mais Rápido Burger — Steak Angus, bacon, catupiry e Doritos — 46,00\n- Maravilha Fit — Steak Angus, queijo prato, salada e maionese — 40,00\n- Viúva Negra Burger — blend de frango empanado, cebola roxa, alface, tomate e molho especial — 40,00\n- Aqua Burger — Steak Angus, camarão e cream cheese — 50,00\n- Hera Vegan Burger — hambúrguer de lentilha, queijo opcional, alface, tomate e cebola roxa (pão amanteigado; pode ser feito 100% vegano sem queijo e sem manteiga) — 43,90\n\n### Petiscos\n- Batata Frita Pequena 70g — 10,00\n- Batata Frita Grande 150g — 15,00\n- Batata Heróis 500g — 50,00\n- Baby Vision Nuggets (10 un.) — 40,00\n- X-Men Chicken Fries — batata crinkle com coxinha de frango — 80,00\n- Tábua Mix — carne, frango, calabresa e batata frita — 80,00\n\n### Bebidas\n- Refrigerante copo 300ml — 10,00 | copo 500ml — 15,00\n- Coca-Cola lata — 10,50\n- Suco Kappo — 8,90 (sabor conforme disponibilidade)\n- Água sem gás — 6,00 | com gás — 7,00\n- Red Bull — 15,00\n\n### Bebidas alcoólicas (somente maiores de 18)\n- Chopp Brahma 300ml — 10,00 | 500ml — 15,00 | 700ml — 19,00\n- Torre de Chopp 1,5L — 59,90 | 2,5L — 74,90 | 3,5L — 119,90\n- Baldinho com 6 cervejas — 80,00\n- Long neck: Heineken 13,00 | Stella Artois 13,00 | Stella Gold 14,00 | Spaten 13,00 | Budweiser 13,00 | Corona 14,00 | Corona Zero 14,00\n- Caipirinha — 25,00 | Capivodka — 27,00 (consultar sabores)\n\n## COMO ANOTAR PEDIDO\n- Pergunte uma coisa por vez. Ordem: itens → entrega ou retirada → endereço (se entrega) → forma de pagamento (se dinheiro, troco para quanto) → nome do cliente.\n- Repita o resumo com itens, quantidades, subtotal, taxa de entrega e TOTAL antes de pedir confirmação.\n- Só feche o pedido depois que o cliente responder claramente que confirma (ex.: \"sim\", \"confirma\", \"pode fechar\").\n\n## FORMATO DE FECHAMENTO (obrigatório quando o cliente confirmar)\nEscreva a mensagem final de confirmação para o cliente (com número do pedido não é necessário; diga o tempo estimado) e, DEPOIS da mensagem, em uma linha separada, inclua exatamente este bloco (o cliente não vai ver o bloco, ele é processado pelo sistema):\n[[PEDIDO]]{\"itens\":[{\"nome\":\"...\",\"qtd\":1,\"preco_unit\":0.0}],\"subtotal\":0.0,\"taxa_entrega\":0.0,\"total\":0.0,\"modalidade\":\"entrega|retirada\",\"endereco\":\"...\",\"pagamento\":\"...\",\"troco_para\":null,\"nome\":\"...\",\"observacoes\":\"...\"}[[/PEDIDO]]\n\n## ENCAMINHAMENTO PARA HUMANO\nSe o cliente pedir para falar com uma pessoa, fizer reclamação, perguntar sobre promoção/cupom, reserva de mesa para grupo grande, evento, ou algo que você não consegue resolver, responda que vai chamar alguém da equipe e inclua no final da mensagem, em linha separada, exatamente: [[HUMANO]]\n\n## ESTILO\n- Português do Brasil, informal mas educado. Trate o cliente pelo nome quando souber.\n- Mensagens curtas (2 a 5 linhas). Listas simples quando for mostrar opções.\n- Formatação do WhatsApp, não Markdown: negrito é *texto* (UM asterisco de cada lado). Nunca use ** nem #.\n- Se perguntarem \"o que tem\", não despeje o cardápio inteiro: resuma as categorias e pergunte o que a pessoa prefere (carne, frango, vegano, combo).\n\n\nNome do cliente no WhatsApp: {{ $json.name || 'desconhecido' }}. Telefone: {{ $json.from }}. Data/hora atual (Brasília): {{ $now.setZone('America/Sao_Paulo').toFormat('cccc, dd/MM/yyyy HH:mm') }}."
+        }
+      },
+      "id": "agent",
+      "name": "Agente Robin (Claude)",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-haiku-4-5",
+        "options": {
+          "temperature": 0.3,
+          "maxTokensToSample": 1024
+        }
+      },
+      "id": "claude",
+      "name": "Anthropic Claude",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.3,
+      "position": [
+        620,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Extrair mensagem').item.json.from }}",
+        "contextWindowLength": 20
+      },
+      "id": "memory",
+      "name": "Memória por telefone",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [
+        800,
+        640
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Separa a resposta visível do cliente dos blocos de controle [[PEDIDO]] e [[HUMANO]].\nconst src = $('Extrair mensagem').item.json;\nlet reply = ($json.output ?? $json.text ?? '').toString();\n\nlet order = null;\nconst m = reply.match(/\\[\\[PEDIDO\\]\\]([\\s\\S]*?)\\[\\[\\/PEDIDO\\]\\]/);\nif (m) {\n  try { order = JSON.parse(m[1]); } catch (e) { order = { raw: m[1] }; }\n  reply = reply.replace(m[0], '').trim();\n}\nconst handoff = /\\[\\[HUMANO\\]\\]/.test(reply);\nreply = reply.replace(/\\[\\[HUMANO\\]\\]/g, '').trim();\n\nlet staffMessage = null;\nif (order) {\n  const itens = (order.itens || []).map(i => `• ${i.qtd}x ${i.nome} — R$ ${Number(i.preco_unit || 0).toFixed(2)}`).join('\\n');\n  staffMessage = `🍔 NOVO PEDIDO (via Robin)\\nCliente: ${order.nome || src.name} — wa.me/${src.from}\\nModalidade: ${order.modalidade}\\n${order.endereco ? 'Endereço: ' + order.endereco + '\\n' : ''}Pagamento: ${order.pagamento}${order.troco_para ? ' (troco p/ ' + order.troco_para + ')' : ''}\\n\\n${itens}\\n\\nSubtotal: R$ ${Number(order.subtotal||0).toFixed(2)}\\nEntrega: R$ ${Number(order.taxa_entrega||0).toFixed(2)}\\nTOTAL: R$ ${Number(order.total||0).toFixed(2)}${order.observacoes ? '\\nObs: ' + order.observacoes : ''}`;\n} else if (handoff) {\n  staffMessage = `🙋 CLIENTE PEDE ATENDENTE\\n${src.name || ''} — wa.me/${src.from}\\nÚltima mensagem: \"${src.text}\"`;\n}\n\nreturn [{ json: { ...src, reply, order, handoff, staffMessage } }];"
+      },
+      "id": "post",
+      "name": "Processar resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $json.graphVersion }}/{{ $json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $json.from, type: 'text', text: { preview_url: false, body: $json.reply } }) }}",
+        "options": {}
+      },
+      "id": "send-client",
+      "name": "Enviar ao cliente",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "s1",
+              "leftValue": "={{ $('Processar resposta').item.json.staffMessage }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-staff",
+      "name": "Avisar equipe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/{{ $('Processar resposta').item.json.graphVersion }}/{{ $('Processar resposta').item.json.phoneNumberId }}/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ messaging_product: 'whatsapp', to: $('Processar resposta').item.json.restaurantNumber, type: 'text', text: { preview_url: false, body: $('Processar resposta').item.json.staffMessage } }) }}",
+        "options": {}
+      },
+      "id": "send-staff",
+      "name": "Enviar à equipe",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1720,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Como configurar\n1. Abra o nó **Config** e o **Config2** e preencha: `phoneNumberId` (tela API Setup da Meta), `restaurantNumber` (número que recebe os pedidos, com DDI, ex. 5564999999999) e, se quiser, troque o `verifyToken`.\n2. Crie a credencial **Header Auth** (Authorization / Bearer SEU_TOKEN_META) e selecione nos dois nós HTTP.\n3. Crie a credencial **Anthropic** e selecione no nó *Anthropic Claude*.\n4. Ative o workflow. Na Meta → WhatsApp → Configuration → Webhook: URL = `https://SEU-TUNNEL/webhook/whatsapp`, Verify token = o mesmo do Config. Assine o campo **messages**.\n5. Mande \"oi\" do seu celular (cadastrado como número de teste) e veja a execução aqui.",
+        "height": 340,
+        "width": 520
+      },
+      "id": "note",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -420
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Verify (GET)": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Token OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token OK?": {
+      "main": [
+        [
+          {
+            "node": "Responder challenge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 403",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Mensagens (POST)": {
+      "main": [
+        [
+          {
+            "node": "Config2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config2": {
+      "main": [
+        [
+          {
+            "node": "Extrair mensagem",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extrair mensagem": {
+      "main": [
+        [
+          {
+            "node": "Agente Robin (Claude)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Claude": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente Robin (Claude)",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Memória por telefone": {
+      "ai_memory": [
+        [
+          {
+            "node": "Agente Robin (Claude)",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente Robin (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Processar resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Processar resposta": {
+      "main": [
+        [
+          {
+            "node": "Enviar ao cliente",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar ao cliente": {
+      "main": [
+        [
+          {
+            "node": "Avisar equipe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Avisar equipe?": {
+      "main": [
+        [
+          {
+            "node": "Enviar à equipe",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Sao_Paulo"
+  },
+  "pinData": {}
+}
