@@ -1,33 +1,29 @@
 # WhatsApp AI Ordering Agent (Claude + n8n + WhatsApp Cloud API)
 
-A production-shaped WhatsApp agent that takes real orders: it knows the menu, handles
-customizations, calculates delivery, confirms the order, and hands the kitchen a
-**structured JSON order** — not a transcript someone has to read and retype.
+WhatsApp bot that takes food orders for a burger place. It knows the menu, handles
+changes like "no onion", calculates delivery, confirms the order and sends the kitchen a
+structured order (JSON) instead of a chat transcript someone has to read and retype.
 
-Built end to end on the **official WhatsApp Cloud API** (no unofficial libraries, no
-browser automation, nothing that gets a number banned).
+It runs on the official WhatsApp Cloud API. No unofficial libraries or browser automation,
+so the number doesn't get banned.
 
-**▶ Watch it run — real, uncut session:** https://youtu.be/wTAgYEjggIE
+Video of a real session (uncut): https://youtu.be/wTAgYEjggIE
 
-The left side is a customer's phone. The right side is n8n executing the agent live.
+Left side is the customer's phone, right side is n8n running the flow.
 
----
+## What it does
 
-## What it actually does
+- Answers questions about the menu, prices, ingredients, opening hours and delivery area
+- Takes the order item by item, with quantities, changes and delivery or pickup
+- Calculates subtotal, delivery fee and total
+- Confirms address and payment method before closing
+- Sends the finished order to the kitchen's WhatsApp, plus the JSON if you want to feed a POS
+- Anything it shouldn't decide (complaints, coupons, big group orders) goes to a person
 
-| | |
-|---|---|
-| **Answers** | menu, prices, ingredients, opening hours, delivery area |
-| **Takes orders** | item by item, with customizations ("no onion"), quantities, delivery vs pickup |
-| **Calculates** | subtotal, delivery fee, total |
-| **Confirms** | address and payment method before closing |
-| **Delivers** | a structured order to the kitchen's WhatsApp, plus JSON your POS can consume |
-| **Escalates** | complaints, coupons, group bookings → tagged for a human, no guessing |
+The bot can only sell what is in the system prompt. If something isn't there, it hands off
+to a human instead of making up an item or a price.
 
-The agent never invents an item or a price: everything it can sell lives in the system
-prompt, and anything outside it is a handoff.
-
-## Architecture
+## How it works
 
 ```
 WhatsApp  ──▶  Cloud API webhook  ──▶  n8n
@@ -45,80 +41,78 @@ WhatsApp  ──▶  Cloud API webhook  ──▶  n8n
                                                 [[HUMANO]]      ──▶ human handoff
 ```
 
-**The control-block trick.** The model writes one message. Everything the customer should
-see is plain text; everything the *system* needs is wrapped in sentinels the customer
-never sees:
+The model writes a single message. The part for the customer is plain text, and the part
+for the system goes inside markers that get removed before sending:
 
 ```
-Perfect, your order is confirmed! Estimated delivery: 40–60 min.
+Perfect, your order is confirmed! Estimated delivery: 40-60 min.
 [[PEDIDO]]{"itens":[{"nome":"Combo Spider Man","qtd":1,"preco_unit":60.0}],
 "subtotal":60.0,"taxa_entrega":8.0,"total":68.0,"modalidade":"entrega",
 "endereco":"...","pagamento":"PIX","observacoes":"sem cebola"}[[/PEDIDO]]
 ```
 
-A Code node strips the block, parses the JSON, and routes it. `[[HUMANO]]` works the same
-way for escalation. This keeps the LLM doing one job (talking) while the workflow stays
-deterministic about money and routing.
+A Code node cuts that block out, parses the JSON and sends it to the kitchen. `[[HUMANO]]`
+does the same for handoff. The LLM only talks; the money and the routing are plain code.
 
-## Why n8n and not a plain Node service
+## Why n8n and not a Node service
 
-Because the person who owns the restaurant has to be able to *see* it. Every conversation
-is a visible execution: what came in, what Claude answered, what went to the kitchen, and
-where it failed. Changing the menu is editing one node, not a deploy. The same agent in
-300 lines of Express is cheaper to run and impossible for the owner to debug at 9pm on a
-Friday.
+The restaurant owner needs to see what's going on. In n8n every conversation is an
+execution you can open: what came in, what Claude answered, what went to the kitchen and
+where it broke. Changing the menu means editing one node, no deploy. The same thing in
+Express would be cheaper to host, but the owner couldn't debug it on a Friday night.
 
-If a client prefers plain Node/NestJS, the same design ports directly — the interesting
-parts (prompt, control blocks, normalization) are framework-agnostic.
+The design isn't tied to n8n. The prompt, the control blocks and the number fix below
+work the same way in Node/NestJS.
 
-## Details that only show up in production
+## Things I only found in production
 
-- **Brazilian 9th digit.** Meta delivers `wa_id` without the mobile 9 (`5564XXXXYYYY`), but
-  the send endpoint needs it. Reply to the raw id and you get `131030 — recipient not in
-  allowed list`, from a number that just messaged you. `normBR()` in the parse node fixes it.
-- **Non-text messages.** Audio, images and stickers reach the webhook too. They're detected
-  and answered politely instead of crashing the flow.
-- **Status webhooks.** `sent`/`delivered`/`read`/`failed` events arrive on the same URL and
-  are filtered out, so a delivery receipt never triggers a reply.
-- **Per-customer memory** keyed by phone number, so the conversation survives across messages.
+- Brazil's 9th digit: Meta sends the `wa_id` without the mobile 9 (`5564XXXXYYYY`), but
+  the send endpoint needs it. If you reply to the raw id you get
+  `131030 recipient not in allowed list` from a number that just messaged you.
+  `normBR()` in the parse node fixes it.
+- Audio, images and stickers also hit the webhook. The bot answers asking for text instead
+  of breaking.
+- `sent` / `delivered` / `read` / `failed` events come to the same URL. They're filtered
+  out, otherwise the bot replies to its own delivery receipts.
+- Memory is per customer, keyed by phone number, so the conversation keeps its context
+  between messages.
 
 ## Repository
 
 ```
-workflow/whatsapp-agent.n8n.json   importable n8n workflow (16 nodes, placeholders only)
-prompts/system-prompt.pt-BR.md     the full agent prompt from the live case
-prompts/system-prompt.template.md  blank template to adapt to any business
-docs/setup.md                      install: Meta → n8n → first message
-docs/meta-gotchas.md               the errors that stop most setups, and the fix for each
+workflow/whatsapp-agent.n8n.json   n8n workflow to import (16 nodes, placeholders only)
+prompts/system-prompt.pt-BR.md     full prompt used in the restaurant
+prompts/system-prompt.template.md  empty template for another business
+docs/setup.md                      Meta -> n8n -> first message
+docs/meta-gotchas.md               errors that block most setups and how to fix them
 ```
 
-No credentials, tokens, phone numbers or account ids are in this repository, by design.
+There are no tokens, phone numbers or account ids in the repo.
 
 ## Setup
 
-See [`docs/setup.md`](docs/setup.md). Short version: import the workflow, fill the two
-Config nodes, add a Header Auth credential with your Meta token and an Anthropic
-credential, point the Meta webhook at your n8n URL, subscribe the `messages` field.
+See [docs/setup.md](docs/setup.md). In short: import the workflow, fill the two Config
+nodes, create a Header Auth credential with the Meta token and an Anthropic credential,
+point the Meta webhook to your n8n URL and subscribe the `messages` field.
 
 ## Cost
 
-Roughly **US$ 0.002 per conversation** with `claude-haiku-4-5` on a menu this size —
-about US$ 2 per thousand conversations. n8n self-hosted is free; WhatsApp charges nothing
-for replies inside the 24-hour customer service window.
+About US$ 0.002 per conversation with `claude-haiku-4-5` for a menu this size, so around
+US$ 2 per thousand conversations. Self-hosted n8n is free and WhatsApp doesn't charge for
+replies inside the 24-hour customer service window.
 
 ## Case study
 
-Built for **Heróis Super Burger**, a hero-themed burger place in Caldas Novas, Brazil.
-The video above is a real session on the live agent, not a mockup.
+Running at Heróis Super Burger, a hero-themed burger place in Caldas Novas, Brazil. The
+video is a real session with the live bot.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The menu and brand in the case-study prompt belong to their
-owner and are there as an example; replace them with your own.
+MIT, see [LICENSE](LICENSE). The menu and brand in the example prompt belong to the
+restaurant; replace them with your own.
 
 ---
 
-Built by **Alexandre Toulios** — full-stack developer (React/Next/TypeScript, Node/NestJS,
-PostgreSQL) working on AI agents and automation.
+Alexandre Toulios, full-stack developer (React/Next/TypeScript, Node/NestJS, PostgreSQL).
 [Upwork](https://www.upwork.com/freelancers/~0104de19b352c1ba9c) ·
 [LinkedIn](https://www.linkedin.com/in/alexandre-toulios)
